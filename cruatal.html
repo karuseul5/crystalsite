@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Crystal Site</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Three.js для 3D -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+
+  <style>
+    body {
+      background: linear-gradient(to right, rgba(200,255,255,0.8), rgba(240,240,255,0.9));
+      transition: background 0.5s, color 0.5s;
+    }
+    body.dark {
+      background: linear-gradient(to right, rgba(20,20,30,0.9), rgba(40,40,60,0.95));
+      color: #eee;
+    }
+    #bg3d {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: -1;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-start p-4">
+
+  <!-- 3D-кристалл -->
+  <canvas id="bg3d"></canvas>
+
+  <!-- Хедер -->
+  <header class="w-full flex justify-between items-center p-4 bg-white/40 dark:bg-gray-900/40 backdrop-blur-md rounded-xl shadow-md">
+    <h1 class="text-2xl font-bold">💎 Crystal Site</h1>
+    <div class="flex gap-4">
+      <button id="toggleTheme" class="px-4 py-2 bg-blue-500 text-white rounded-xl shadow">🌙/☀️</button>
+      <button id="logoutBtn" class="hidden px-4 py-2 bg-red-500 text-white rounded-xl shadow">Выйти</button>
+    </div>
+  </header>
+
+  <!-- Регистрация и вход -->
+  <section id="authSection" class="w-full max-w-md mt-6 space-y-4">
+    <form id="registerForm" class="p-4 bg-white/50 dark:bg-gray-800/50 rounded-xl shadow-md">
+      <h2 class="font-semibold mb-2">Регистрация</h2>
+      <input type="email" id="regEmail" placeholder="Email" class="w-full p-2 mb-2 rounded bg-white/70 dark:bg-gray-700/70">
+      <input type="password" id="regPass" placeholder="Пароль" class="w-full p-2 mb-2 rounded bg-white/70 dark:bg-gray-700/70">
+      <button class="w-full py-2 bg-green-500 text-white rounded">Зарегистрироваться</button>
+    </form>
+
+    <form id="loginForm" class="p-4 bg-white/50 dark:bg-gray-800/50 rounded-xl shadow-md">
+      <h2 class="font-semibold mb-2">Вход</h2>
+      <input type="email" id="logEmail" placeholder="Email" class="w-full p-2 mb-2 rounded bg-white/70 dark:bg-gray-700/70">
+      <input type="password" id="logPass" placeholder="Пароль" class="w-full p-2 mb-2 rounded bg-white/70 dark:bg-gray-700/70">
+      <button class="w-full py-2 bg-blue-500 text-white rounded">Войти</button>
+    </form>
+  </section>
+
+  <!-- Контент для пользователей -->
+  <section id="contentSection" class="hidden w-full max-w-2xl mt-6 space-y-4">
+    <form id="postForm" class="p-4 bg-white/50 dark:bg-gray-800/50 rounded-xl shadow-md">
+      <h2 class="font-semibold mb-2">Новый пост</h2>
+      <input type="text" id="postTitle" placeholder="Заголовок" class="w-full p-2 mb-2 rounded bg-white/70 dark:bg-gray-700/70">
+      <textarea id="postContent" placeholder="Текст или ссылка на арт" class="w-full p-2 mb-2 rounded bg-white/70 dark:bg-gray-700/70"></textarea>
+      <button class="w-full py-2 bg-indigo-500 text-white rounded">Опубликовать</button>
+    </form>
+
+    <div id="posts" class="space-y-4"></div>
+  </section>
+
+  <!-- Админ-панель -->
+  <section id="adminSection" class="hidden w-full max-w-4xl mt-6 p-4 bg-white/60 dark:bg-gray-900/60 rounded-xl shadow-lg">
+    <h2 class="text-xl font-bold mb-4">👑 Админ-панель</h2>
+    <div id="adminUsers" class="mb-6"></div>
+    <div id="adminPosts"></div>
+  </section>
+
+<script>
+  // === СВЕТ/ТЕМНАЯ ТЕМА ===
+  document.getElementById("toggleTheme").addEventListener("click", () => {
+    document.body.classList.toggle("dark");
+  });
+
+  // === SUPABASE ===
+  const supabaseUrl = "https://eovarfaccwrhuocmbzif.supabase.co";
+  const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvdmFyZmFjY3dyaHVvY21iemlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NTc0MTMsImV4cCI6MjA3MzUzMzQxM30.2u8N1Mgz3kxe5vd-_alHdzjVIj6ZzhDG_hL-dSrTXHo";
+  const client = supabase.createClient(supabaseUrl, supabaseKey);
+
+  const authSection = document.getElementById("authSection");
+  const contentSection = document.getElementById("contentSection");
+  const adminSection = document.getElementById("adminSection");
+  const logoutBtn = document.getElementById("logoutBtn");
+
+  // Проверка пользователя и роли
+  async function refreshUser() {
+    const { data: { user } } = await client.auth.getUser();
+    if (user) {
+      authSection.classList.add("hidden");
+      contentSection.classList.remove("hidden");
+      logoutBtn.classList.remove("hidden");
+
+      // Проверяем роль в таблице user
+      let { data, error } = await client.from("user").select("role").eq("id", user.id).single();
+      if (data && data.role === "admin") {
+        adminSection.classList.remove("hidden");
+        loadAdmin();
+      } else {
+        adminSection.classList.add("hidden");
+      }
+
+      loadPosts();
+    } else {
+      authSection.classList.remove("hidden");
+      contentSection.classList.add("hidden");
+      logoutBtn.classList.add("hidden");
+      adminSection.classList.add("hidden");
+    }
+  }
+  refreshUser();
+
+  // === Регистрация ===
+  document.getElementById("registerForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = regEmail.value, pass = regPass.value;
+    const { data, error } = await client.auth.signUp({ email, password: pass });
+    if (error) return alert(error.message);
+
+    // Добавляем пользователя в таблицу user
+    await client.from("user").insert([{ id: data.user.id, email, role: "user" }]);
+    alert("Регистрация успешна!");
+    refreshUser();
+  });
+
+  // === Вход ===
+  document.getElementById("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = logEmail.value, pass = logPass.value;
+    const { error } = await client.auth.signInWithPassword({ email, password: pass });
+    if (error) alert(error.message);
+    else refreshUser();
+  });
+
+  // === Выход ===
+  logoutBtn.addEventListener("click", async () => {
+    await client.auth.signOut();
+    refreshUser();
+  });
+
+  // === Публикации ===
+  document.getElementById("postForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const title = postTitle.value, content = postContent.value;
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return alert("Сначала войдите!");
+    const { error } = await client.from("posts").insert([{ author_id: user.id, title, content }]);
+    if (error) alert(error.message);
+    else {
+      postTitle.value = "";
+      postContent.value = "";
+      loadPosts();
+    }
+  });
+
+  async function loadPosts() {
+    const { data } = await client.from("posts").select("*").order("created_at", { ascending: false });
+    const postsDiv = document.getElementById("posts");
+    postsDiv.innerHTML = "";
+    if (data) data.forEach(p => {
+      const el = document.createElement("div");
+      el.className = "p-4 bg-white/40 dark:bg-gray-800/40 rounded shadow";
+      el.innerHTML = `<h3 class="font-bold">${p.title}</h3><p>${p.content}</p>`;
+      postsDiv.appendChild(el);
+    });
+  }
+
+  // === Админ-панель ===
+  async function loadAdmin() {
+    // Все пользователи
+    let { data: users } = await client.from("user").select("*");
+    const adminUsers = document.getElementById("adminUsers");
+    adminUsers.innerHTML = "<h3 class='font-semibold mb-2'>Пользователи</h3>";
+    users.forEach(u => {
+      const div = document.createElement("div");
+      div.className = "p-2 bg-gray-200 dark:bg-gray-700 rounded mb-1";
+      div.innerHTML = `${u.email} (${u.role})`;
+      adminUsers.appendChild(div);
+    });
+
+    // Все посты
+    let { data: posts } = await client.from("posts").select("*");
+    const adminPosts = document.getElementById("adminPosts");
+    adminPosts.innerHTML = "<h3 class='font-semibold mb-2'>Посты</h3>";
+    posts.forEach(p => {
+      const div = document.createElement("div");
+      div.className = "p-2 bg-gray-100 dark:bg-gray-800 rounded mb-1";
+      div.innerHTML = `<b>${p.title}</b>: ${p.content}`;
+      adminPosts.appendChild(div);
+    });
+  }
+
+  // === THREE.js 3D-кристалл ===
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({canvas: document.getElementById("bg3d"), alpha: true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.position.z = 5;
+
+  const geometry = new THREE.OctahedronGeometry(1, 0);
+  const material = new THREE.MeshPhongMaterial({ color: 0x00ffff, transparent: true, opacity: 0.7 });
+  const crystal = new THREE.Mesh(geometry, material);
+  scene.add(crystal);
+
+  const light = new THREE.PointLight(0xffffff, 1);
+  light.position.set(5,5,5);
+  scene.add(light);
+
+  function animate() {
+    requestAnimationFrame(animate);
+    crystal.rotation.x += 0.01;
+    crystal.rotation.y += 0.01;
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+
+</body>
+</html>
